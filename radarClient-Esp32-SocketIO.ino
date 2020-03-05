@@ -15,6 +15,7 @@
 #include <Adafruit_FeatherOLED_WiFi.h>
 
 #include <AutoConnect.h>
+//#include <AutoConnectCredential.h>
 
 String radarServerHostName =  "10.100.22.45";  //"10.100.6.36";
 int radarServerPortNumber = 8080; //12336,
@@ -22,6 +23,7 @@ int radarServerPortNumber = 8080; //12336,
 WebServer Server;
 AutoConnect portal(Server);
 AutoConnectConfig Config;
+AutoConnectCredential Credential;
 //#define speedLedType Adafruit_7segment 
 #define speedLedType Adafruit_AlphaNum4
 
@@ -39,7 +41,7 @@ SocketIoClient webSocket;
 #define BUTTON_A 15
 #define BUTTON_B 32
 #define BUTTON_C 14
-
+#define BUILTIN_LED 13
 Adafruit_FeatherOLED_WiFi oled;
 //Adafruit_FeatherOLED oled;
 //Adafruit_SSD1306 oled;
@@ -65,22 +67,106 @@ bool btnCPressed = false;
 bool btnCReleased = true;
 bool btnCClicked = false;
 
-bool clearDisplay = false;
+bool clearOledDisplay = false;
+bool clearLedDisplay = false;
 
-void connectEvent(const char * payload, size_t length){
-  USE_SERIAL.println("connectEvent Wifi Connected");
+bool restartWebsockets = false;
+float serverBatteryVoltage = 0.00;
+void handleRoot() {
+  String page = PSTR(
+"<html>"
+"<head>"
+  "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+  "<script type=\"text/javascript\">"
+  "function updateConfig(){"
+  "var url=\"/config?\";"
+   "url += \"serverHostName=\" + document.getElementById(\"serverHostName\").value;"
+   "url += \"&serverPort=\" + document.getElementById(\"serverPort\").value;"
+   "url += \"&password=\" + document.getElementById(\"password\").value;"
+   "window.location.href = url;"
+  "}"
+  "</script>"
+  "<style type=\"text/css\">"
+    "body {"
+    "-webkit-appearance:none;"
+    "-moz-appearance:none;"
+    "font-family:'Arial',sans-serif;"
+    "text-align:center;"
+    "}"
+    ".menu > a:link {"
+    "position: absolute;"
+    "display: inline-block;"
+    "right: 12px;"
+    "padding: 0 6px;"
+    "text-decoration: none;"
+    "}"
+    ".button {"
+    "display:inline-block;"
+    "border-radius:7px;"
+    "background:#73ad21;"
+    "margin:0 10px 0 10px;"
+    "padding:10px 20px 10px 20px;"
+    "text-decoration:none;"
+    "color:#000000;"
+    "}"
+  "</style>"
+"</head>"
+"<body>"
+  "<div class=\"menu\">" AUTOCONNECT_LINK(BAR_32) "</div>"
+  "Radar Server Config<br>"
+  "Server :");
+  
+  page += String(F(" <input id=\"serverHostName\" value=\""));
+  page += radarServerHostName;
+  page += String(F("\"/><br/>"));
+  page += String(F(" Port <input id=\"serverPort\" value=\""));
+  page += String(radarServerPortNumber);
+  page += String(F("\"/><br/>"));
+  page += String(F(" Password <input id=\"password\" type=\"password\" value=\"\"/><br/>"));
+  page += String(F("<p><a class=\"button\" href=\"javascript:updateConfig();\">Save</a></p>"));
+  page += String(F("</body></html>"));
+  portal.host().send(200, "text/html", page);
+}
+
+
+
+
+
+void sendRedirect(String uri) {
+  WebServerClass& server = portal.host();
+  server.sendHeader("Location", uri, true);
+  server.send(302, "text/plain", "");
+  server.client().stop();
+}
+
+void handleConfigChange() {
+  WebServerClass& server = portal.host();
+  if (server.arg("password") == "radar"){
+    radarServerHostName = server.arg("serverHostName");
+    radarServerPortNumber = server.arg("serverPort").toInt();
+    sendRedirect("/?save=success");
+    restartWebsockets = true;
+  }else{
+    sendRedirect("/?save=fail&msg=Bad%20Password");
+  }
+  
+}
+
+void socketConnectEvent(const char * payload, size_t length){
+  USE_SERIAL.println("connectEvent Socket Connected");
   oled.clearDisplay();
   oled.setTextSize(1);
   oled.setTextColor(SSD1306_WHITE);
   oled.setCursor(0,0);
   oled.println("Connected to");
   oled.println("Radar Server");
+  oled.println(radarServerHostName + ":" +  String(radarServerPortNumber));
   oled.display();
-  clearDisplay = true;
+  clearOledDisplay = true;
 }
 
-void disconnectEvent(const char * payload, size_t length){
-  USE_SERIAL.println("disconnectEvent Wifi Disconnected");
+void socketDisconnectEvent(const char * payload, size_t length){
+  USE_SERIAL.println("disconnectEvent Socket Disconnected");
   oled.clearDisplay();
   oled.setTextSize(1);
   oled.setTextColor(SSD1306_WHITE);
@@ -88,7 +174,7 @@ void disconnectEvent(const char * payload, size_t length){
   oled.println("Disconnected from");
   oled.println("Radar Server");
   oled.display();
-  clearDisplay = true;
+  clearOledDisplay = true;
 }
 
 void radarSpeedEvent(const char * payload, size_t length) {
@@ -117,6 +203,62 @@ void radarSpeedEvent(const char * payload, size_t length) {
     USE_SERIAL.flush();
     
   }
+}
+
+
+void radarConfigPropertyEvent(const char * payload, size_t length) {
+  USE_SERIAL.printf("got message: %s\n", payload);
+   // Deserialize the JSON document
+  StaticJsonDocument<1024> doc;
+  DeserializationError error = deserializeJson(doc, payload);
+
+  // Test if parsing succeeds.
+  if (error) {
+    USE_SERIAL.print(F("deserializeJson() failed: "));
+    USE_SERIAL.println(error.c_str());
+  }else{
+
+    if ( doc["Property"] == "TransmiterControl"){
+        if ( doc["data"] == 0){
+            USE_SERIAL.println("[TransmiterControl] radar powered off");
+            clearLedDisplay = true;
+        }else{
+          USE_SERIAL.println("[TransmiterControl] radar powered on");
+          writeLedTestPattern();
+          clearLedDisplay = true;
+        }
+    }
+  }
+}
+
+void radarBatteryVoltageEvent(const char * payload, size_t length) {
+  USE_SERIAL.printf("got message: %s\n", payload);
+   // Deserialize the JSON document
+  StaticJsonDocument<100> doc;
+  DeserializationError error = deserializeJson(doc, payload);
+
+  // Test if parsing succeeds.
+  if (error) {
+    USE_SERIAL.print(F("deserializeJson() failed: "));
+    USE_SERIAL.println(error.c_str());
+  }else{
+    serverBatteryVoltage =  doc["batteryVoltage"];
+    
+  }
+}
+//batteryVoltage
+
+void writeLedTestPattern(){
+   speedIn.writeDigitRaw(0, 0x3FFF);
+    speedIn.writeDigitRaw(1, 0x3FFF);
+    speedIn.writeDigitRaw(2, 0x3FFF);
+    speedIn.writeDigitRaw(3, 0x3FFF);
+    speedIn.writeDisplay();
+    speedOut.writeDigitRaw(0, 0x3FFF);
+    speedOut.writeDigitRaw(1, 0x3FFF);
+    speedOut.writeDigitRaw(2, 0x3FFF);
+    speedOut.writeDigitRaw(3, 0x3FFF);
+    speedOut.writeDisplay();
 }
 
 //on Quad fix 5 0b0000000011101101, // 5
@@ -157,24 +299,13 @@ void setup() {
     pinMode(BUTTON_A, INPUT_PULLUP);
     pinMode(BUTTON_B, INPUT_PULLUP);
     pinMode(BUTTON_C, INPUT_PULLUP);
-    pinMode(13, OUTPUT);
-    digitalWrite(13, LOW);
+    pinMode(BUILTIN_LED, OUTPUT);
+    digitalWrite(BUILTIN_LED, LOW);
     //Wire.begin(23,22);
     speedIn.begin(0x70);
-    speedIn.writeDigitRaw(0, 0x3FFF);
-    speedIn.writeDigitRaw(1, 0x3FFF);
-    speedIn.writeDigitRaw(2, 0x3FFF);
-    speedIn.writeDigitRaw(3, 0x3FFF);
-    speedIn.writeDisplay();
-    //displayWriteFloat(speedIn,8888,0);
-    //Wire.begin()
     speedOut.begin(0x71);
-    //displayWriteFloat(speedOut,8888,0);
-    speedOut.writeDigitRaw(0, 0x3FFF);
-    speedOut.writeDigitRaw(1, 0x3FFF);
-    speedOut.writeDigitRaw(2, 0x3FFF);
-    speedOut.writeDigitRaw(3, 0x3FFF);
-    speedOut.writeDisplay();
+    writeLedTestPattern();
+    
     //oled = Adafruit_SSD1306(128, 32, &Wire, -1);
     //oled = Adafruit_FeatherOLED(&Wire, -1);
     oled = Adafruit_FeatherOLED_WiFi(&Wire, -1);
@@ -197,25 +328,28 @@ void setup() {
     
     
     webSocket.on("radarSpeed", radarSpeedEvent);
-
-    webSocket.on("connect", connectEvent);
-    webSocket.on("disconnect", disconnectEvent);
+    webSocket.on("batteryVoltage", radarBatteryVoltageEvent);
+    webSocket.on("radarConfigProperty", radarConfigPropertyEvent); 
+    webSocket.on("connect", socketConnectEvent);
+    webSocket.on("disconnect", socketDisconnectEvent);
     
     
-    
+    //Credential = AutoConnectCredential();
 
     Config.autoReconnect = true;
     uint64_t chipid = ESP.getEfuseMac();
     Config.apid = "radarDisplay" + String((uint32_t)chipid, HEX);
     Config.psk = "";
     
-    Config.ticker = true;
-    Config.tickerPort = 13;
-    Config.tickerOn = LOW;
+    //Config.ticker = true;
+    //Config.tickerPort = BUILTIN_LED;
+    //Config.tickerOn = HIGH;
     //Config.autoSave = AC_SAVECREDENTIAL_NEVER;
     portal.config(Config);
     portal.onDetect(atDetect);
     if (portal.begin()) {
+      Server.on("/", handleRoot);
+      Server.on("/config", handleConfigChange);
       oled.clearDisplay();
       oled.setTextSize(1);
       oled.setTextColor(SSD1306_WHITE);
@@ -225,12 +359,11 @@ void setup() {
       oled.display();
       Serial.println("Started, IP:" + WiFi.localIP().toString());
       Serial.println("Trying Connect to Radar Monitor: " + radarServerHostName + ":" +  String(radarServerPortNumber));
-      //webSocket.begin("10.100.6.36",12336,"/socket.io/?transport=websocket" );
       webSocket.begin(radarServerHostName.c_str(), radarServerPortNumber,"/socket.io/?transport=websocket" );
     // use HTTP Basic Authorization this is optional remove if not needed
     //webSocket.setAuthorization("username", "password");
       periodicLoop();
-      clearDisplay = true;
+      clearOledDisplay = true;
     }
     else {
       oled.clearDisplay();
@@ -258,7 +391,7 @@ float getBatteryVoltage() {
 
 void periodicLoop(){
 
-  if(clearDisplay){
+  if(clearOledDisplay){
     oled.setBatteryVisible(false);
     oled.setRSSIVisible(false);
     oled.setIPAddressVisible(false);
@@ -266,7 +399,7 @@ void periodicLoop(){
     oled.clearDisplay();
     // update the display 
     oled.display();
-    clearDisplay = false;
+    clearOledDisplay = false;
   }
 
   if (btnAClicked){
@@ -288,7 +421,7 @@ void periodicLoop(){
     oled.refreshIcons();
     btnAClicked = false;
     oled.display();
-    clearDisplay = true;
+    clearOledDisplay = true;
   }
 
   if (btnBClicked){
@@ -299,23 +432,41 @@ void periodicLoop(){
     oled.setTextColor(SSD1306_WHITE);
     oled.setCursor(0,0);
     oled.println("Server: " + radarServerHostName + ":" +  String(radarServerPortNumber));
+    oled.println("Volts: " +  String(serverBatteryVoltage));
+    
     oled.println("Connected");
     btnBClicked = false;
     oled.display();
-    clearDisplay = true;
+    clearOledDisplay = true;
   }
 
   if (btnCClicked){
-      oled.clearDisplay();
-    // get the current voltage of the battery from
-    // one of the platform specific functions below 
+    oled.clearDisplay();
     oled.setTextSize(1);
     oled.setTextColor(SSD1306_WHITE);
     oled.setCursor(0,0);
-    oled.println("Button C Pressed");
+    oled.println("Restarting Server Connection");
+    restartWebsockets = true;
     btnCClicked = false;
     oled.display();
-    clearDisplay = true;
+    clearOledDisplay = true;
+  }
+
+
+  if (clearLedDisplay){
+    speedIn.blinkRate(0);
+    speedOut.blinkRate(0);
+    clearLedDisplay = false;
+    speedIn.clear();
+    speedOut.clear();
+    speedIn.writeDisplay();
+    speedOut.writeDisplay();
+  }
+
+  if(restartWebsockets){
+    webSocket.disconnect();
+    webSocket.begin(radarServerHostName.c_str(), radarServerPortNumber,"/socket.io/?transport=websocket" );
+    restartWebsockets = false;
   }
   
   // increment the counter by 1
