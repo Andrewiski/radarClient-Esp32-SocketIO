@@ -210,7 +210,7 @@ void setup() {
     if (portal.begin()) {
       oled.clearDisplay();
       oled.println("IP:" + WiFi.localIP().toString());
-      oled.println("Radar Monitor: " + radarServerHostName + ":" +  String(radarServerPortNumber));
+      oled.println("Server: " + radarServerHostName + ":" +  String(radarServerPortNumber));
       oled.display();
       Serial.println("Started, IP:" + WiFi.localIP().toString());
       Serial.println("Trying Connect to Radar Monitor: " + radarServerHostName + ":" +  String(radarServerPortNumber));
@@ -267,7 +267,7 @@ void periodicLoop(){
     oled.setRSSI(WiFi.RSSI());
     oled.setIPAddressVisible(true);
     oled.setIPAddress(WiFi.localIP());
-    oled.println("IP :" + WiFi.localIP().toString() );
+    //oled.println("IP :" + WiFi.localIP().toString() );
     oled.setConnectedVisible(true);
     oled.setConnected(true);
     float battery = getBatteryVoltage();
@@ -276,6 +276,16 @@ void periodicLoop(){
     oled.renderBattery();
     oled.refreshIcons();
     btnAClicked = false;
+    oled.display();
+    clearDisplay = true;
+  }
+
+  if (btnBClicked){
+      oled.clearDisplay();
+    // get the current voltage of the battery from
+    // one of the platform specific functions below 
+    oled.println("Server: " + radarServerHostName + ":" +  String(radarServerPortNumber));
+    btnBClicked = false;
     oled.display();
     clearDisplay = true;
   }
