@@ -70,7 +70,11 @@ bool clearDisplay = false;
 void connectEvent(const char * payload, size_t length){
   USE_SERIAL.println("connectEvent Wifi Connected");
   oled.clearDisplay();
-  oled.println("Connected to Radar Server");
+  oled.setTextSize(1);
+  oled.setTextColor(SSD1306_WHITE);
+  oled.setCursor(0,0);
+  oled.println("Connected to");
+  oled.println("Radar Server");
   oled.display();
   clearDisplay = true;
 }
@@ -78,7 +82,11 @@ void connectEvent(const char * payload, size_t length){
 void disconnectEvent(const char * payload, size_t length){
   USE_SERIAL.println("disconnectEvent Wifi Disconnected");
   oled.clearDisplay();
-  oled.println("Disconnected from Radar Server");
+  oled.setTextSize(1);
+  oled.setTextColor(SSD1306_WHITE);
+  oled.setCursor(0,0);
+  oled.println("Disconnected from");
+  oled.println("Radar Server");
   oled.display();
   clearDisplay = true;
 }
@@ -209,6 +217,9 @@ void setup() {
     portal.onDetect(atDetect);
     if (portal.begin()) {
       oled.clearDisplay();
+      oled.setTextSize(1);
+      oled.setTextColor(SSD1306_WHITE);
+      oled.setCursor(0,0);
       oled.println("IP:" + WiFi.localIP().toString());
       oled.println("Server: " + radarServerHostName + ":" +  String(radarServerPortNumber));
       oled.display();
@@ -284,29 +295,29 @@ void periodicLoop(){
       oled.clearDisplay();
     // get the current voltage of the battery from
     // one of the platform specific functions below 
+    oled.setTextSize(1);
+    oled.setTextColor(SSD1306_WHITE);
+    oled.setCursor(0,0);
     oled.println("Server: " + radarServerHostName + ":" +  String(radarServerPortNumber));
+    oled.println("Connected");
     btnBClicked = false;
     oled.display();
     clearDisplay = true;
   }
-  
-  /*
-  oled.clearDisplay();
- 
 
-  if((count % 2) == 0){
-  // text display tests
+  if (btnCClicked){
+      oled.clearDisplay();
+    // get the current voltage of the battery from
+    // one of the platform specific functions below 
     oled.setTextSize(1);
     oled.setTextColor(SSD1306_WHITE);
     oled.setCursor(0,0);
-    oled.println("Connecting to SSID\n'adafruit':");
-    // print the count value to the OLED
-    oled.print("count: ");
-    oled.println(count);
+    oled.println("Button C Pressed");
+    btnCClicked = false;
+    oled.display();
+    clearDisplay = true;
   }
-  */
   
-
   // increment the counter by 1
   count++;
   lastPeriodicLoop = millis();
@@ -318,6 +329,9 @@ void loop() {
     if (WiFi.status() == WL_IDLE_STATUS) {
       USE_SERIAL.println("Wifi is idle restarting");
       oled.clearDisplay();
+      oled.setTextSize(1);
+      oled.setTextColor(SSD1306_WHITE);
+      oled.setCursor(0,0);
       oled.println("Wifi is idle restarting");
       oled.display();
       ESP.restart();
@@ -353,13 +367,24 @@ void loop() {
       USE_SERIAL.println("Button A");
       periodicLoop();
     }
-    if(btnBPressed == false && !digitalRead(BUTTON_B)){
+    if(btnBClicked == false && btnBPressed == false && btnBReleased == true && !digitalRead(BUTTON_B)){
       btnBPressed = true;
+      btnBReleased = false;
+    }else if(btnBClicked == false && btnBPressed == true && btnBReleased == false && digitalRead(BUTTON_B)){
+      btnBPressed = false;
+      btnBReleased = true;
+      btnBClicked = true;
       USE_SERIAL.println("Button B");
       periodicLoop();
     }
-    if(btnCPressed == false && !digitalRead(BUTTON_C)){
+    
+    if(btnCClicked == false && btnCPressed == false && btnCReleased == true && !digitalRead(BUTTON_C)){
       btnCPressed = true;
+      btnCReleased = false;
+    }else if(btnCClicked == false && btnCPressed == true && btnCReleased == false && digitalRead(BUTTON_C)){
+      btnCPressed = false;
+      btnCReleased = true;
+      btnCClicked = true;
       USE_SERIAL.println("Button C");
       periodicLoop();
     }
