@@ -3,7 +3,7 @@
 //#include <Arduino.h>
 #include <WiFi.h>
 //#include <WiFiMulti.h>
-
+//#include "EEPROM.h"
 #include <SocketIoClient.h>
 #include <SPI.h>
 #include <Wire.h>
@@ -13,9 +13,12 @@
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_FeatherOLED.h>
 #include <Adafruit_FeatherOLED_WiFi.h>
-
+#include <Arduino_CRC32.h>
 #include <AutoConnect.h>
 //#include <AutoConnectCredential.h>
+#include <Preferences.h>
+
+Preferences preferences;
 
 String radarServerHostName =  "10.100.22.45";  //"10.100.6.36";
 int radarServerPortNumber = 8080; //12336,
@@ -69,7 +72,7 @@ bool btnCClicked = false;
 
 bool clearOledDisplay = false;
 bool clearLedDisplay = false;
-
+bool lowLocalBattery = false;
 bool restartWebsockets = false;
 float serverBatteryVoltage = 0.00;
 void handleRoot() {
@@ -129,6 +132,14 @@ void handleRoot() {
 }
 
 
+void writeConfigData(){
+  preferences.begin("radarConfig", false);
+    //Limit 15 Char Name
+  preferences.putString("ServerHostName", radarServerHostName);
+  preferences.putInt("ServerPort", radarServerPortNumber);
+  preferences.end();
+}
+
 
 
 
@@ -144,6 +155,7 @@ void handleConfigChange() {
   if (server.arg("password") == "radar"){
     radarServerHostName = server.arg("serverHostName");
     radarServerPortNumber = server.arg("serverPort").toInt();
+    writeConfigData();
     sendRedirect("/?save=success");
     restartWebsockets = true;
   }else{
@@ -289,11 +301,18 @@ bool atDetect(IPAddress ip) {
   return true;
 }
 
+
+
 void setup() {
     USE_SERIAL.begin(115200);
 
     USE_SERIAL.setDebugOutput(true);
-    USE_SERIAL.println("Starting ..." );
+    USE_SERIAL.println("Starting ..." );  
+    preferences.begin("radarConfig", true);
+    //Limit 15 Char Name
+    radarServerHostName = preferences.getString("ServerHostName", radarServerHostName);
+    radarServerPortNumber = preferences.getInt("ServerPort", radarServerPortNumber);
+    preferences.end();
     USE_SERIAL.println();
     USE_SERIAL.println();
     pinMode(BUTTON_A, INPUT_PULLUP);
@@ -302,6 +321,8 @@ void setup() {
     pinMode(BUILTIN_LED, OUTPUT);
     digitalWrite(BUILTIN_LED, LOW);
     //Wire.begin(23,22);
+
+        
     speedIn.begin(0x70);
     speedOut.begin(0x71);
     writeLedTestPattern();
@@ -335,8 +356,9 @@ void setup() {
     
     
     //Credential = AutoConnectCredential();
-
+    Config.boundaryOffset = 256;
     Config.autoReconnect = true;
+    
     uint64_t chipid = ESP.getEfuseMac();
     Config.apid = "radarDisplay" + String((uint32_t)chipid, HEX);
     Config.psk = "";
@@ -390,6 +412,38 @@ float getBatteryVoltage() {
 
 
 void periodicLoop(){
+
+
+  if(count % 10 == 0) {
+    float battery = getBatteryVoltage();
+    if (battery <= 3.4){
+      Serial.println("Low Battery Going to Deep Sleep.");
+      ESP.deepSleep(0);
+    }else if (battery <= 3.5){
+      oled.clearDisplay();
+      oled.setBatteryVisible(true);
+      oled.setBattery(battery);
+      oled.renderBattery();
+      oled.display();
+      lowLocalBattery = true;
+      clearLedDisplay = true;
+    }else if (battery <= 3.6){
+      oled.clearDisplay();
+      oled.setBatteryVisible(true);
+      oled.setBattery(battery);
+      oled.renderBattery();
+      oled.display();
+      lowLocalBattery = true;
+      
+    }
+    else{  //we Got Power
+      if(lowLocalBattery == true){
+        lowLocalBattery = false;
+        clearLedDisplay = true;
+      }
+    }
+    
+  }
 
   if(clearOledDisplay){
     oled.setBatteryVisible(false);
