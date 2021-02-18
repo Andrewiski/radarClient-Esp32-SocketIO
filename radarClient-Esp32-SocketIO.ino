@@ -1,4 +1,11 @@
-
+#define useOle true
+#define useOleLarge true
+#define useSpeedIn true
+#define useSpeedOut true
+#define speedInAddress 0x70
+#define speedOutAddress 0x71
+#define useAlphaNum true
+#define useBattery true
 
 //#include <Arduino.h>
 #include <WiFi.h>
@@ -10,13 +17,36 @@
 #include <Adafruit_GFX.h>
 #include "Adafruit_LEDBackpack.h"
 #include <ArduinoJson.h>
-#include <Adafruit_SSD1306.h>
-#include <Adafruit_FeatherOLED.h>
-#include <Adafruit_FeatherOLED_WiFi.h>
+#if useOle 
+  #if useOleLarge
+    #include <Adafruit_SH110X.h>
+    #include <Adafruit_FeatherOLED_SH110X.h>
+    #include <Adafruit_FeatherOLED_SH110X_WiFi.h>
+  #else
+    #include <Adafruit_SSD1306.h>
+    #include <Adafruit_FeatherOLED.h>
+    #include <Adafruit_FeatherOLED_WiFi.h>
+  #endif
+ 
+#endif
+
+
 #include <Arduino_CRC32.h>
 #include <AutoConnect.h>
 //#include <AutoConnectCredential.h>
 #include <Preferences.h>
+
+
+
+
+#if useAlphaNum
+  #define speedLedType Adafruit_AlphaNum4
+#else
+  #define speedLedType Adafruit_7segment 
+#endif
+//
+#define USE_SERIAL Serial
+
 
 Preferences preferences;
 
@@ -27,14 +57,16 @@ WebServer Server;
 AutoConnect portal(Server);
 AutoConnectConfig Config;
 AutoConnectCredential Credential;
-//#define speedLedType Adafruit_7segment 
-#define speedLedType Adafruit_AlphaNum4
 
+#if useSpeedIn
 speedLedType speedIn = speedLedType();
+#endif
 
+#if useSpeedOut
 speedLedType speedOut = speedLedType();
+#endif
 
-#define USE_SERIAL Serial
+
 
 
 //WiFiMulti WiFiMulti;
@@ -45,9 +77,16 @@ SocketIoClient webSocket;
 #define BUTTON_B 32
 #define BUTTON_C 14
 #define BUILTIN_LED 13
-Adafruit_FeatherOLED_WiFi oled;
-//Adafruit_FeatherOLED oled;
-//Adafruit_SSD1306 oled;
+
+#if useOle
+ #if useOleLarge
+    Adafruit_FeatherOLED_SH110X_WiFi oled;
+  #else
+    Adafruit_FeatherOLED_WiFi oled;
+  #endif
+  
+#endif
+
 // integer variable to hold current counter value
 int count = 0;
 
@@ -166,27 +205,39 @@ void handleConfigChange() {
 
 void socketConnectEvent(const char * payload, size_t length){
   USE_SERIAL.println("connectEvent Socket Connected");
-  oled.clearDisplay();
-  oled.setTextSize(1);
-  oled.setTextColor(SSD1306_WHITE);
-  oled.setCursor(0,0);
-  oled.println("Connected to");
-  oled.println("Radar Server");
-  oled.println(radarServerHostName + ":" +  String(radarServerPortNumber));
-  oled.display();
-  clearOledDisplay = true;
+  #if useOle
+    oled.clearDisplay();
+    oled.setTextSize(1);
+    #if useOleLarge           
+        oled.setTextColor(SH110X_WHITE);         
+    #else           
+      oled.setTextColor(WHITE);         
+    #endif
+    oled.setCursor(0,0);
+    oled.println("Connected to");
+    oled.println("Radar Server");
+    oled.println(radarServerHostName + ":" +  String(radarServerPortNumber));
+    oled.display();
+    clearOledDisplay = true;
+  #endif
 }
 
 void socketDisconnectEvent(const char * payload, size_t length){
   USE_SERIAL.println("disconnectEvent Socket Disconnected");
-  oled.clearDisplay();
-  oled.setTextSize(1);
-  oled.setTextColor(SSD1306_WHITE);
-  oled.setCursor(0,0);
-  oled.println("Disconnected from");
-  oled.println("Radar Server");
-  oled.display();
-  clearOledDisplay = true;
+  #if useOle
+    oled.clearDisplay();
+    oled.setTextSize(1);
+    #if useOleLarge           
+        oled.setTextColor(SH110X_WHITE);         
+    #else           
+      oled.setTextColor(WHITE);         
+    #endif
+    oled.setCursor(0,0);
+    oled.println("Disconnected from");
+    oled.println("Radar Server");
+    oled.display();
+    clearOledDisplay = true;
+  #endif
 }
 
 void radarSpeedEvent(const char * payload, size_t length) {
@@ -202,8 +253,14 @@ void radarSpeedEvent(const char * payload, size_t length) {
   }else{
     float inMaxSpeed = doc["inMaxSpeed"];
     float outMaxSpeed = doc["outMaxSpeed"];
-    displayWriteFloat(speedIn,inMaxSpeed,2);
-    displayWriteFloat(speedOut,outMaxSpeed,2);
+    #if useSpeedIn
+      USE_SERIAL.printf("Write SpeedIn %f \n" , inMaxSpeed);
+      displayWriteFloat(speedIn,inMaxSpeed,2);
+    #endif
+    #if useSpeedOut
+      USE_SERIAL.printf("Write SpeedOut %f \n" , outMaxSpeed);
+      displayWriteFloat(speedOut,outMaxSpeed,2);
+    #endif
     //speedIn.print(inMaxSpeed);
     //speedIn.blinkRate(2);
     //speedOut.print(outMaxSpeed);
@@ -211,7 +268,7 @@ void radarSpeedEvent(const char * payload, size_t length) {
     //speedIn.writeDisplay();
     //speedOut.writeDisplay();
     lastLedUpdate = millis();
-    USE_SERIAL.printf("[RadarSpeed] In %f Out  %f...\n", inMaxSpeed, outMaxSpeed );
+    //USE_SERIAL.printf("[RadarSpeed] In %f Out  %f...\n", inMaxSpeed, outMaxSpeed );
     USE_SERIAL.flush();
     
   }
@@ -261,16 +318,36 @@ void radarBatteryVoltageEvent(const char * payload, size_t length) {
 //batteryVoltage
 
 void writeLedTestPattern(){
-   speedIn.writeDigitRaw(0, 0x3FFF);
-    speedIn.writeDigitRaw(1, 0x3FFF);
-    speedIn.writeDigitRaw(2, 0x3FFF);
-    speedIn.writeDigitRaw(3, 0x3FFF);
-    speedIn.writeDisplay();
-    speedOut.writeDigitRaw(0, 0x3FFF);
-    speedOut.writeDigitRaw(1, 0x3FFF);
-    speedOut.writeDigitRaw(2, 0x3FFF);
-    speedOut.writeDigitRaw(3, 0x3FFF);
-    speedOut.writeDisplay();
+    #if useSpeedIn
+      #if useAlphaNum
+        speedIn.writeDigitRaw(0, 0x3FFF);
+        speedIn.writeDigitRaw(1, 0x3FFF);
+        speedIn.writeDigitRaw(2, 0x3FFF);
+        speedIn.writeDigitRaw(3, 0x3FFF);
+      #else
+        speedIn.writeDigitNum(0, 8, true);
+        speedIn.writeDigitNum(1, 8, true);
+        speedIn.drawColon(true);
+        speedIn.writeDigitNum(3, 8, true);
+        speedIn.writeDigitNum(4, 8, true);
+      #endif
+      speedIn.writeDisplay();
+    #endif
+    #if useSpeedOut
+      #if useAlphaNum
+        speedOut.writeDigitRaw(0, 0x3FFF);
+        speedOut.writeDigitRaw(1, 0x3FFF);
+        speedOut.writeDigitRaw(2, 0x3FFF);
+        speedOut.writeDigitRaw(3, 0x3FFF);
+        speedOut.writeDisplay();
+      #else
+        speedIn.writeDigitNum(0, 8, true);
+        speedIn.writeDigitNum(1, 8, true);
+        speedIn.drawColon(true);
+        speedIn.writeDigitNum(3, 8, true);
+        speedIn.writeDigitNum(4, 8, true);
+      #endif
+    #endif
 }
 
 //on Quad fix 5 0b0000000011101101, // 5
@@ -279,7 +356,7 @@ void displayWriteFloat(speedLedType ledDisplay, float speedValue,  int blinkRate
   char buff[10];
   snprintf (buff, sizeof(buff), "%f", speedValue);
   int offset = 0;
-  
+  #if useAlphaNum
   for (int a=0; a<5; a++) {
     if(buff[a+1] == '.'){
       ledDisplay.writeDigitAscii(a-offset,buff[a], true);
@@ -288,6 +365,9 @@ void displayWriteFloat(speedLedType ledDisplay, float speedValue,  int blinkRate
       ledDisplay.writeDigitAscii(a-offset,buff[a], false);
     }
   }
+  #else
+    ledDisplay.print(speedValue);
+  #endif
   ledDisplay.blinkRate(blinkRate);
   ledDisplay.writeDisplay();
 }
@@ -295,9 +375,11 @@ void displayWriteFloat(speedLedType ledDisplay, float speedValue,  int blinkRate
 bool atDetect(IPAddress ip) {
   
   Serial.println("C.P. started, IP:" + ip.toString());
-  oled.clearDisplay();
-  oled.println("AP started: " + ip.toString());
-  oled.display();
+  #if useOle
+    oled.clearDisplay();
+    oled.println("AP started: " + ip.toString());
+    oled.display();
+  #endif
   return true;
 }
 
@@ -315,38 +397,64 @@ void setup() {
     preferences.end();
     USE_SERIAL.println();
     USE_SERIAL.println();
-    pinMode(BUTTON_A, INPUT_PULLUP);
-    pinMode(BUTTON_B, INPUT_PULLUP);
-    pinMode(BUTTON_C, INPUT_PULLUP);
+    #if useOle
+      pinMode(BUTTON_A, INPUT_PULLUP);
+      pinMode(BUTTON_B, INPUT_PULLUP);
+      pinMode(BUTTON_C, INPUT_PULLUP);
+    #endif
     pinMode(BUILTIN_LED, OUTPUT);
     digitalWrite(BUILTIN_LED, LOW);
     //Wire.begin(23,22);
 
-        
-    speedIn.begin(0x70);
-    speedOut.begin(0x71);
+    #if useAlphaNum 
+      USE_SERIAL.printf("Using Alpha Numeric Led \n");   
+    #else
+      USE_SERIAL.printf("Using 7 Seg Numeric Led \n");        
+    #endif
+    
+
+    #if useSpeedIn 
+      USE_SERIAL.printf("SpeedIn I2C Address %d...\n", speedInAddress);   
+      speedIn.begin(speedInAddress);
+    #endif
+    #if useSpeedOut 
+      USE_SERIAL.printf("SpeedOut I2C Address %d...\n", speedInAddress);
+      speedOut.begin(speedOutAddress);
+    #endif
     writeLedTestPattern();
     
-    //oled = Adafruit_SSD1306(128, 32, &Wire, -1);
-    //oled = Adafruit_FeatherOLED(&Wire, -1);
-    oled = Adafruit_FeatherOLED_WiFi(&Wire, -1);
+    #if useOle
+      #if useOleLarge
+        oled = Adafruit_FeatherOLED_SH110X_WiFi(&Wire, -1);
+      #else
+        oled = Adafruit_FeatherOLED_WiFi(&Wire, -1);
+      #endif
+      
+    #endif
+    
     //oled.display();
     for(uint8_t t = 4; t > 0; t--) {
         USE_SERIAL.printf("[SETUP] BOOT WAIT %d...\n", t);
         USE_SERIAL.flush();
         delay(1000);
     }
-    speedIn.clear();
-    speedIn.writeDisplay();
-    speedOut.clear();
-    speedOut.writeDisplay();
-    //oled.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+    #if useSpeedIn
+      speedIn.clear();
+      speedIn.setBrightness(15);
+      speedIn.writeDisplay();
+    #endif
+    #if useSpeedOut
+      speedOut.clear();
+      speedIn.setBrightness(15);
+      speedOut.writeDisplay();
+    #endif
     
-    oled.init();
-    
-    oled.clearDisplay();
-    oled.display();
-    
+
+    #if useOle
+      oled.init();
+      oled.clearDisplay();
+      oled.display();
+    #endif
     
     webSocket.on("radarSpeed", radarSpeedEvent);
     webSocket.on("batteryVoltage", radarBatteryVoltageEvent);
@@ -357,7 +465,10 @@ void setup() {
     
     //Credential = AutoConnectCredential();
     Config.boundaryOffset = 256;
-    Config.autoReconnect = true;
+    Config.autoReset = false;     // Not reset the module even by intentional disconnection using AutoConnect menu.
+    Config.autoReconnect = true;  // Reconnect to known access points.
+    Config.reconnectInterval = 6; // Reconnection attempting interval is 3[min].
+    Config.retainPortal = true; 
     
     uint64_t chipid = ESP.getEfuseMac();
     Config.apid = "radarDisplay" + String((uint32_t)chipid, HEX);
@@ -372,13 +483,20 @@ void setup() {
     if (portal.begin()) {
       Server.on("/", handleRoot);
       Server.on("/config", handleConfigChange);
-      oled.clearDisplay();
-      oled.setTextSize(1);
-      oled.setTextColor(SSD1306_WHITE);
-      oled.setCursor(0,0);
-      oled.println("IP:" + WiFi.localIP().toString());
-      oled.println("Server: " + radarServerHostName + ":" +  String(radarServerPortNumber));
-      oled.display();
+      #if useOle
+        oled.clearDisplay();
+        oled.setTextSize(1);
+        #if useOleLarge
+          oled.setTextColor(SH110X_WHITE);
+        #else
+          oled.setTextColor(WHITE);
+        #endif
+        
+        oled.setCursor(0,0);
+        oled.println("IP:" + WiFi.localIP().toString());
+        oled.println("Server: " + radarServerHostName + ":" +  String(radarServerPortNumber));
+        oled.display();
+      #endif
       Serial.println("Started, IP:" + WiFi.localIP().toString());
       Serial.println("Trying Connect to Radar Monitor: " + radarServerHostName + ":" +  String(radarServerPortNumber));
       webSocket.begin(radarServerHostName.c_str(), radarServerPortNumber,"/socket.io/?transport=websocket" );
@@ -388,9 +506,11 @@ void setup() {
       clearOledDisplay = true;
     }
     else {
-      oled.clearDisplay();
-      oled.println("Connection failed.");
-      oled.display();
+      #if useOle
+        oled.clearDisplay();
+        oled.println("Connection failed.");
+        oled.display();
+      #endif
       Serial.println("Connection failed.");
       while (true) { yield(); }
     }
@@ -398,11 +518,14 @@ void setup() {
 
 float getBatteryVoltage() {
 
-    float measuredvbat = analogRead(A13);
-
-    measuredvbat *= 2;    // we divided by 2, so multiply back
-    measuredvbat *= 3.3;  // Multiply by 3.3V, our reference voltage
-    measuredvbat /= 4098; // convert to voltage
+    #if useBattery
+      float measuredvbat = analogRead(A13);
+      measuredvbat *= 2;    // we divided by 2, so multiply back
+      measuredvbat *= 3.3;  // Multiply by 3.3V, our reference voltage
+      measuredvbat /= 4098; // convert to voltage
+    #else
+      float measuredvbat = 5.55;
+    #endif
     return measuredvbat;
 
   }
@@ -420,19 +543,23 @@ void periodicLoop(){
       Serial.println("Low Battery Going to Deep Sleep.");
       ESP.deepSleep(0);
     }else if (battery <= 3.5){
-      oled.clearDisplay();
-      oled.setBatteryVisible(true);
-      oled.setBattery(battery);
-      oled.renderBattery();
-      oled.display();
+      #if useOle
+        oled.clearDisplay();
+        oled.setBatteryVisible(true);
+        oled.setBattery(battery);
+        oled.renderBattery();
+        oled.display();
+      #endif
       lowLocalBattery = true;
       clearLedDisplay = true;
     }else if (battery <= 3.6){
-      oled.clearDisplay();
-      oled.setBatteryVisible(true);
-      oled.setBattery(battery);
-      oled.renderBattery();
-      oled.display();
+      #if useOle
+        oled.clearDisplay();
+        oled.setBatteryVisible(true);
+        oled.setBattery(battery);
+        oled.renderBattery();
+        oled.display();
+      #endif
       lowLocalBattery = true;
       
     }
@@ -446,75 +573,98 @@ void periodicLoop(){
   }
 
   if(clearOledDisplay){
-    oled.setBatteryVisible(false);
-    oled.setRSSIVisible(false);
-    oled.setIPAddressVisible(false);
-    oled.setConnectedVisible(false);
-    oled.clearDisplay();
-    // update the display 
-    oled.display();
+    #if useOle
+      oled.setBatteryVisible(false);
+      oled.setRSSIVisible(false);
+      oled.setIPAddressVisible(false);
+      oled.setConnectedVisible(false);
+      oled.clearDisplay();
+      // update the display 
+      oled.display();
+    #endif
     clearOledDisplay = false;
   }
 
   if (btnAClicked){
+    #if useOle
       oled.clearDisplay();
-    // get the current voltage of the battery from
-    // one of the platform specific functions below
-    oled.setBatteryVisible(true);
-    oled.setRSSIVisible(true);
-    oled.setRSSI(WiFi.RSSI());
-    oled.setIPAddressVisible(true);
-    oled.setIPAddress(WiFi.localIP());
-    //oled.println("IP :" + WiFi.localIP().toString() );
-    oled.setConnectedVisible(true);
-    oled.setConnected(true);
-    float battery = getBatteryVoltage();
-    // update the battery icon
-    oled.setBattery(battery);
-    oled.renderBattery();
-    oled.refreshIcons();
+      // get the current voltage of the battery from
+      // one of the platform specific functions below
+      oled.setBatteryVisible(true);
+      oled.setRSSIVisible(true);
+      oled.setRSSI(WiFi.RSSI());
+      oled.setIPAddressVisible(true);
+      oled.setIPAddress(WiFi.localIP());
+      //oled.println("IP :" + WiFi.localIP().toString() );
+      oled.setConnectedVisible(true);
+      oled.setConnected(true);
+      
+      float battery = getBatteryVoltage();
+      // update the battery icon
+      
+      oled.setBattery(battery);
+      oled.renderBattery();
+      oled.refreshIcons();
+      oled.display();
+    #endif
+    
     btnAClicked = false;
-    oled.display();
+    
     clearOledDisplay = true;
   }
 
   if (btnBClicked){
+    #if useOle
       oled.clearDisplay();
-    // get the current voltage of the battery from
-    // one of the platform specific functions below 
-    oled.setTextSize(1);
-    oled.setTextColor(SSD1306_WHITE);
-    oled.setCursor(0,0);
-    oled.println("Server: " + radarServerHostName + ":" +  String(radarServerPortNumber));
-    oled.println("Volts: " +  String(serverBatteryVoltage));
-    
-    oled.println("Connected");
+      // get the current voltage of the battery from
+      // one of the platform specific functions below 
+      oled.setTextSize(1);
+      #if useOleLarge           
+        oled.setTextColor(SH110X_WHITE);         
+      #else           
+        oled.setTextColor(WHITE);         
+      #endif
+      oled.setCursor(0,0);
+      oled.println("Server: " + radarServerHostName + ":" +  String(radarServerPortNumber));
+      oled.println("Volts: " +  String(serverBatteryVoltage));
+      oled.println("Connected");
+      oled.display();
+    #endif
     btnBClicked = false;
-    oled.display();
     clearOledDisplay = true;
   }
 
   if (btnCClicked){
-    oled.clearDisplay();
-    oled.setTextSize(1);
-    oled.setTextColor(SSD1306_WHITE);
-    oled.setCursor(0,0);
-    oled.println("Restarting Server Connection");
+    #if useOle
+      oled.clearDisplay();
+      oled.setTextSize(1);
+      #if useOleLarge           
+        oled.setTextColor(SH110X_WHITE);         
+      #else           
+        oled.setTextColor(WHITE);         
+      #endif
+      oled.setCursor(0,0);
+      oled.println("Restarting Server Connection");
+      oled.display();
+    #endif
     restartWebsockets = true;
     btnCClicked = false;
-    oled.display();
     clearOledDisplay = true;
   }
 
 
   if (clearLedDisplay){
-    speedIn.blinkRate(0);
-    speedOut.blinkRate(0);
+    #if useSpeedIn
+      speedIn.blinkRate(0);
+      speedIn.clear();
+      speedIn.writeDisplay();
+    #endif
+    #if useSpeedOut
+      speedOut.blinkRate(0);
+      speedOut.clear();
+      speedOut.writeDisplay();
+    #endif
     clearLedDisplay = false;
-    speedIn.clear();
-    speedOut.clear();
-    speedIn.writeDisplay();
-    speedOut.writeDisplay();
   }
 
   if(restartWebsockets){
@@ -531,15 +681,21 @@ void periodicLoop(){
 
 void loop() {
     portal.handleClient();
-    if (WiFi.status() == WL_IDLE_STATUS) {
-      USE_SERIAL.println("Wifi is idle restarting");
-      oled.clearDisplay();
-      oled.setTextSize(1);
-      oled.setTextColor(SSD1306_WHITE);
-      oled.setCursor(0,0);
-      oled.println("Wifi is idle restarting");
-      oled.display();
-      ESP.restart();
+    if (WiFi.status() != WL_CONNECTED) {
+      USE_SERIAL.println("Wifi is disconnected");
+      #if useOle
+        oled.clearDisplay();
+        oled.setTextSize(1);
+        #if useOleLarge           
+          oled.setTextColor(SH110X_WHITE);         
+        #else           
+          oled.setTextColor(WHITE);         
+        #endif
+        oled.setCursor(0,0);
+        oled.println("Wifi is disconnected");
+        oled.display();
+      #endif
+      //ESP.restart();
       delay(1000);
     }
     webSocket.loop();
@@ -550,8 +706,12 @@ void loop() {
       if((currentMillis - lastLedUpdate) > ledBlinkInterval)  // time to turn off blink
       {
         lastLedUpdate = 0;
-        speedIn.blinkRate(0);
-        speedOut.blinkRate(0);
+        #if useSpeedIn
+          speedIn.blinkRate(0);
+        #endif
+        #if useSpeedOut
+          speedOut.blinkRate(0);
+        #endif
       }
     }
     
@@ -562,35 +722,37 @@ void loop() {
         USE_SERIAL.println("periodicLoop");
         lastPeriodicLoop = millis();
       }
-    if(btnAClicked == false && btnAPressed == false && btnAReleased == true && !digitalRead(BUTTON_A)){
-      btnAPressed = true;
-      btnAReleased = false;
-    }else if(btnAClicked == false && btnAPressed == true && btnAReleased == false && digitalRead(BUTTON_A)){
-      btnAPressed = false;
-      btnAReleased = true;
-      btnAClicked = true;
-      USE_SERIAL.println("Button A");
-      periodicLoop();
-    }
-    if(btnBClicked == false && btnBPressed == false && btnBReleased == true && !digitalRead(BUTTON_B)){
-      btnBPressed = true;
-      btnBReleased = false;
-    }else if(btnBClicked == false && btnBPressed == true && btnBReleased == false && digitalRead(BUTTON_B)){
-      btnBPressed = false;
-      btnBReleased = true;
-      btnBClicked = true;
-      USE_SERIAL.println("Button B");
-      periodicLoop();
-    }
-    
-    if(btnCClicked == false && btnCPressed == false && btnCReleased == true && !digitalRead(BUTTON_C)){
-      btnCPressed = true;
-      btnCReleased = false;
-    }else if(btnCClicked == false && btnCPressed == true && btnCReleased == false && digitalRead(BUTTON_C)){
-      btnCPressed = false;
-      btnCReleased = true;
-      btnCClicked = true;
-      USE_SERIAL.println("Button C");
-      periodicLoop();
-    }
+    #if useOle
+      if(btnAClicked == false && btnAPressed == false && btnAReleased == true && !digitalRead(BUTTON_A)){
+        btnAPressed = true;
+        btnAReleased = false;
+      }else if(btnAClicked == false && btnAPressed == true && btnAReleased == false && digitalRead(BUTTON_A)){
+        btnAPressed = false;
+        btnAReleased = true;
+        btnAClicked = true;
+        USE_SERIAL.println("Button A");
+        periodicLoop();
+      }
+      if(btnBClicked == false && btnBPressed == false && btnBReleased == true && !digitalRead(BUTTON_B)){
+        btnBPressed = true;
+        btnBReleased = false;
+      }else if(btnBClicked == false && btnBPressed == true && btnBReleased == false && digitalRead(BUTTON_B)){
+        btnBPressed = false;
+        btnBReleased = true;
+        btnBClicked = true;
+        USE_SERIAL.println("Button B");
+        periodicLoop();
+      }
+      
+      if(btnCClicked == false && btnCPressed == false && btnCReleased == true && !digitalRead(BUTTON_C)){
+        btnCPressed = true;
+        btnCReleased = false;
+      }else if(btnCClicked == false && btnCPressed == true && btnCReleased == false && digitalRead(BUTTON_C)){
+        btnCPressed = false;
+        btnCReleased = true;
+        btnCClicked = true;
+        USE_SERIAL.println("Button C");
+        periodicLoop();
+      }
+     #endif
 }
