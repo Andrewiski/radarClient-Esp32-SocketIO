@@ -1,11 +1,11 @@
-#define useOle true
-#define useOleLarge true
+#define useOle false
+#define useOleLarge false
 #define useSpeedIn true
-#define useSpeedOut true
+#define useSpeedOut false
 #define speedInAddress 0x70
 #define speedOutAddress 0x71
-#define useAlphaNum true
-#define useBattery true
+#define useAlphaNum false
+#define useBattery false
 
 //#include <Arduino.h>
 #include <WiFi.h>
@@ -52,7 +52,7 @@ Preferences preferences;
 
 String radarServerHostName =  "10.100.22.45";  //"10.100.6.36";
 int radarServerPortNumber = 8080; //12336,
-
+String APSSID = "";
 WebServer Server;
 AutoConnect portal(Server);
 AutoConnectConfig Config;
@@ -214,6 +214,7 @@ void socketConnectEvent(const char * payload, size_t length){
       oled.setTextColor(WHITE);         
     #endif
     oled.setCursor(0,0);
+    oled.setTextSize(1);
     oled.println("Connected to");
     oled.println("Radar Server");
     oled.println(radarServerHostName + ":" +  String(radarServerPortNumber));
@@ -232,6 +233,7 @@ void socketDisconnectEvent(const char * payload, size_t length){
     #else           
       oled.setTextColor(WHITE);         
     #endif
+    
     oled.setCursor(0,0);
     oled.println("Disconnected from");
     oled.println("Radar Server");
@@ -374,10 +376,13 @@ void displayWriteFloat(speedLedType ledDisplay, float speedValue,  int blinkRate
 
 bool atDetect(IPAddress ip) {
   
-  Serial.println("C.P. started, IP:" + ip.toString());
+  Serial.println("A.P. started, IP:" + ip.toString());
   #if useOle
     oled.clearDisplay();
-    oled.println("AP started: " + ip.toString());
+    oled.println("AP started:");
+    oled.println(ip.toString());
+    oled.println("SSID:");
+    oled.println(APSSID);
     oled.display();
   #endif
   return true;
@@ -471,7 +476,8 @@ void setup() {
     Config.retainPortal = true; 
     
     uint64_t chipid = ESP.getEfuseMac();
-    Config.apid = "radarDisplay" + String((uint32_t)chipid, HEX);
+    APSSID = "radarDisplay" + String((uint32_t)chipid, HEX);
+    Config.apid = APSSID;
     Config.psk = "";
     
     //Config.ticker = true;
@@ -508,6 +514,7 @@ void setup() {
     else {
       #if useOle
         oled.clearDisplay();
+        oled.setTextSize(1);
         oled.println("Connection failed.");
         oled.display();
       #endif
@@ -522,6 +529,7 @@ float getBatteryVoltage() {
       float measuredvbat = analogRead(A13);
       measuredvbat *= 2;    // we divided by 2, so multiply back
       measuredvbat *= 3.3;  // Multiply by 3.3V, our reference voltage
+      measuredvbat *= 1.1;  // Multiply by 1.1V, the adC reference voltage
       measuredvbat /= 4098; // convert to voltage
     #else
       float measuredvbat = 5.55;
@@ -588,6 +596,7 @@ void periodicLoop(){
   if (btnAClicked){
     #if useOle
       oled.clearDisplay();
+      oled.setTextSize(1);
       // get the current voltage of the battery from
       // one of the platform specific functions below
       oled.setBatteryVisible(true);
@@ -692,6 +701,8 @@ void loop() {
           oled.setTextColor(WHITE);         
         #endif
         oled.setCursor(0,0);
+        oled.println("SSID:");
+        oled.println(APSSID);
         oled.println("Wifi is disconnected");
         oled.display();
       #endif
